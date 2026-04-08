@@ -180,6 +180,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
 }).addTo(map);
 let homeLocation = null;
+let mapInitialized = false;  // only auto-fit bounds once
 
 let mapMarkers = [];
 
@@ -263,10 +264,15 @@ function updateMap() {
         });
     }
 
-    if (bounds.length > 0) {
-        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
-    } else if (homeLocation) {
-        map.setView(homeLocation, 11);
+    // Only auto-fit on first load — don't hijack the view on every poll
+    if (!mapInitialized) {
+        if (bounds.length > 0) {
+            map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+            mapInitialized = true;
+        } else if (homeLocation) {
+            map.setView(homeLocation, 11);
+            mapInitialized = true;
+        }
     }
 }
 
@@ -278,6 +284,7 @@ document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.add('active');
         document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
         activeTab = tab.dataset.tab;
+        mapInitialized = false;  // re-fit when switching tabs
         updateMap();
     });
 });
