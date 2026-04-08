@@ -293,6 +293,7 @@ function renderStations(stations) {
         div.querySelector('.info').addEventListener('click', () => openConversation(s.callsign));
         div.querySelector('.del-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
+            if (!confirm('Remove ' + s.callsign + ' from saved stations?')) return;
             await fetch('/api/stations?callsign=' + encodeURIComponent(s.callsign), {method: 'DELETE'});
             loadStations();
         });
