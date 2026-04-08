@@ -82,6 +82,11 @@
     .aprsfi-link { color: #888; font-size: 10px; font-weight: normal; text-decoration: none; margin-left: 4px; }
     .aprsfi-link:hover { color: #00d4ff; text-decoration: underline; }
 
+    #filter-bar { padding: 8px 15px; background: #0f3460; color: #00d4ff; font-size: 13px; display: none; align-items: center; justify-content: space-between; border-bottom: 1px solid #0f3460; }
+    #filter-bar .filter-label { }
+    #filter-bar .filter-close { cursor: pointer; color: #888; font-size: 12px; text-decoration: underline; }
+    #filter-bar .filter-close:hover { color: #e0e0e0; }
+
     @media (max-width: 700px) { #sidebar { display: none; } }
 </style>
 </head>
@@ -92,6 +97,10 @@
     <span id="status">connecting...</span>
 </header>
 <div id="pending-bar"></div>
+<div id="filter-bar">
+    <span class="filter-label">Talking to: <strong id="filter-call"></strong></span>
+    <span class="filter-close" id="filter-clear">show all</span>
+</div>
 
 <div class="container">
     <div id="messages-panel">
@@ -142,12 +151,16 @@
 
 <script>
 let msgIndex = 0;
+let allMessages = [];     // full message history
+let filterCall = null;    // currently filtered callsign, or null for all
 
 const messagesDiv = document.getElementById('messages');
 const heardList = document.getElementById('heard-list');
 const stationsList = document.getElementById('stations-list');
 const statusEl = document.getElementById('status');
 const pendingBar = document.getElementById('pending-bar');
+const filterBar = document.getElementById('filter-bar');
+const filterCallEl = document.getElementById('filter-call');
 const destInput = document.getElementById('dest');
 const textInput = document.getElementById('text');
 const sendForm = document.getElementById('send-form');
@@ -174,21 +187,44 @@ function setDest(callsign) {
     textInput.focus();
 }
 
+function openConversation(callsign) {
+    filterCall = callsign.toUpperCase();
+    destInput.value = filterCall;
+    filterCallEl.textContent = filterCall;
+    filterBar.style.display = 'flex';
+    renderMessages();
+    textInput.focus();
+}
+
+function clearFilter() {
+    filterCall = null;
+    filterBar.style.display = 'none';
+    renderMessages();
+}
+
+document.getElementById('filter-clear').addEventListener('click', clearFilter);
+
 function aprsfiUrl(callsign) {
     return 'https://aprs.fi/#!call=a%2F' + encodeURIComponent(callsign) + '&timerange=3600';
 }
 
 // --- Messages ---
-function addMessage(msg) {
-    const div = document.createElement('div');
-    const dir = msg.direction.toLowerCase();
-    div.className = 'msg ' + (dir === 'rx' ? 'rx' : dir === 'retry' ? 'retry' : 'tx');
-    const arrow = dir === 'rx' ? 'from' : 'to';
-    div.innerHTML = `
-        <div class="meta">${msg.timestamp} ${msg.direction} ${arrow} ${msg.callsign}</div>
-        <div class="body">${escHtml(msg.text)}</div>
-    `;
-    messagesDiv.appendChild(div);
+function renderMessages() {
+    messagesDiv.innerHTML = '';
+    const msgs = filterCall
+        ? allMessages.filter(m => m.callsign.toUpperCase() === filterCall)
+        : allMessages;
+    msgs.forEach(msg => {
+        const div = document.createElement('div');
+        const dir = msg.direction.toLowerCase();
+        div.className = 'msg ' + (dir === 'rx' ? 'rx' : dir === 'retry' ? 'retry' : 'tx');
+        const arrow = dir === 'rx' ? 'from' : 'to';
+        div.innerHTML = `
+            <div class="meta">${msg.timestamp} ${msg.direction} ${arrow} ${msg.callsign}</div>
+            <div class="body">${escHtml(msg.text)}</div>
+        `;
+        messagesDiv.appendChild(div);
+    });
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
@@ -196,8 +232,11 @@ async function pollMessages() {
     try {
         const resp = await fetch('/api/messages?since=' + msgIndex);
         const data = await resp.json();
-        data.messages.forEach(addMessage);
-        msgIndex = data.total;
+        if (data.messages.length > 0) {
+            allMessages = allMessages.concat(data.messages);
+            msgIndex = data.total;
+            renderMessages();
+        }
     } catch(e) {}
 }
 
@@ -215,6 +254,8 @@ sendForm.addEventListener('submit', async (e) => {
         destInput.value = dest;
         textInput.value = '';
         textInput.focus();
+        // If we just sent to someone, open their conversation
+        if (!filterCall) openConversation(dest);
         await pollMessages();
     } catch(e) {
         alert('Send failed: ' + e);
@@ -249,7 +290,7 @@ function renderStations(stations) {
                 <button class="btn btn-sm btn-danger del-btn">X</button>
             </div>
         `;
-        div.querySelector('.info').addEventListener('click', () => setDest(s.callsign));
+        div.querySelector('.info').addEventListener('click', () => openConversation(s.callsign));
         div.querySelector('.del-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
             await fetch('/api/stations?callsign=' + encodeURIComponent(s.callsign), {method: 'DELETE'});
@@ -291,7 +332,7 @@ async function pollHeard() {
                 <div class="time">${s.last_seen}</div>
                 <div class="comment">${escHtml(s.comment || '')}</div>
             `;
-            div.addEventListener('click', (e) => { if (!e.target.classList.contains('aprsfi-link')) setDest(s.callsign); });
+            div.addEventListener('click', (e) => { if (!e.target.classList.contains('aprsfi-link')) openConversation(s.callsign); });
             heardList.appendChild(div);
         });
     } catch(e) {}
