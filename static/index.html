@@ -4,30 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>APRS Messenger</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
 
-    header { background: #16213e; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f3460; }
+    header { background: #16213e; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f3460; }
     header h1 { font-size: 18px; color: #00d4ff; }
     #status { font-size: 13px; color: #4ecca3; }
     #status.disconnected { color: #e74c3c; }
 
     #pending-bar { padding: 6px 15px; background: #2a2a1e; color: #f0c040; font-size: 12px; border-bottom: 1px solid #0f3460; display: none; }
 
-    .container { display: flex; flex: 1; overflow: hidden; }
+    #filter-bar { padding: 8px 15px; background: #0f3460; color: #00d4ff; font-size: 13px; display: none; align-items: center; justify-content: space-between; border-bottom: 1px solid #0f3460; }
+    #filter-bar .filter-close { cursor: pointer; color: #888; font-size: 12px; text-decoration: underline; }
+    #filter-bar .filter-close:hover { color: #e0e0e0; }
 
-    /* Messages panel */
-    #messages-panel { flex: 1; display: flex; flex-direction: column; }
-    #messages { flex: 1; overflow-y: auto; padding: 15px; }
-    .msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 6px; max-width: 80%; }
+    .main-layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* Left: map + messages */
+    #left-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #map { height: 45%; min-height: 200px; }
+    #messages-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #messages { flex: 1; overflow-y: auto; padding: 10px 15px; }
+    .msg { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; max-width: 80%; }
     .msg.tx { background: #0f3460; margin-left: auto; text-align: right; }
     .msg.rx { background: #1a3a1a; }
     .msg.retry { background: #3a3a1a; font-style: italic; font-size: 13px; }
-    .msg .meta { font-size: 11px; color: #888; margin-bottom: 3px; }
+    .msg .meta { font-size: 11px; color: #888; margin-bottom: 2px; }
     .msg .body { word-wrap: break-word; }
 
-    #send-form { padding: 12px; background: #16213e; border-top: 2px solid #0f3460; display: flex; gap: 8px; }
+    #send-form { padding: 10px; background: #16213e; border-top: 2px solid #0f3460; display: flex; gap: 8px; }
     #send-form input { background: #1a1a2e; border: 1px solid #0f3460; color: #e0e0e0; padding: 8px 12px; font-family: inherit; font-size: 14px; border-radius: 4px; }
     #dest { width: 120px; }
     #text { flex: 1; }
@@ -39,13 +47,10 @@
 
     /* Sidebar */
     #sidebar { width: 300px; background: #16213e; border-left: 2px solid #0f3460; display: flex; flex-direction: column; }
-
-    /* Tabs */
     .tabs { display: flex; border-bottom: 2px solid #0f3460; }
     .tab { flex: 1; padding: 10px 8px; text-align: center; font-size: 13px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -2px; }
     .tab:hover { color: #e0e0e0; }
     .tab.active { color: #00d4ff; border-bottom-color: #00d4ff; }
-
     .tab-content { flex: 1; overflow-y: auto; display: none; }
     .tab-content.active { display: flex; flex-direction: column; }
 
@@ -82,12 +87,10 @@
     .aprsfi-link { color: #00d4ff; font-size: 11px; font-weight: normal; text-decoration: none; margin-left: 6px; border: 1px solid #0f3460; padding: 1px 5px; border-radius: 3px; }
     .aprsfi-link:hover { background: #0f3460; text-decoration: none; }
 
-    #filter-bar { padding: 8px 15px; background: #0f3460; color: #00d4ff; font-size: 13px; display: none; align-items: center; justify-content: space-between; border-bottom: 1px solid #0f3460; }
-    #filter-bar .filter-label { }
-    #filter-bar .filter-close { cursor: pointer; color: #888; font-size: 12px; text-decoration: underline; }
-    #filter-bar .filter-close:hover { color: #e0e0e0; }
-
-    @media (max-width: 700px) { #sidebar { display: none; } }
+    @media (max-width: 700px) {
+        #sidebar { display: none; }
+        #map { height: 35%; }
+    }
 </style>
 </head>
 <body>
@@ -102,14 +105,17 @@
     <span class="filter-close" id="filter-clear">show all</span>
 </div>
 
-<div class="container">
-    <div id="messages-panel">
-        <div id="messages"></div>
-        <form id="send-form">
-            <input type="text" id="dest" placeholder="Callsign" autocomplete="off" spellcheck="false">
-            <input type="text" id="text" placeholder="Message" autocomplete="off" spellcheck="false">
-            <button type="submit" class="btn">Send</button>
-        </form>
+<div class="main-layout">
+    <div id="left-panel">
+        <div id="map"></div>
+        <div id="messages-panel">
+            <div id="messages"></div>
+            <form id="send-form">
+                <input type="text" id="dest" placeholder="Callsign" autocomplete="off" spellcheck="false">
+                <input type="text" id="text" placeholder="Message" autocomplete="off" spellcheck="false">
+                <button type="submit" class="btn">Send</button>
+            </form>
+        </div>
     </div>
 
     <div id="sidebar">
@@ -119,7 +125,6 @@
             <div class="tab" data-tab="email">Email</div>
         </div>
 
-        <!-- Stations tab -->
         <div id="tab-stations" class="tab-content active">
             <div id="stations-list"></div>
             <div id="add-station-form">
@@ -131,12 +136,10 @@
             </div>
         </div>
 
-        <!-- Heard tab -->
         <div id="tab-heard" class="tab-content">
             <div id="heard-list"></div>
         </div>
 
-        <!-- Email tab -->
         <div id="tab-email" class="tab-content">
             <div id="email-panel">
                 <p>Send email via the APRS EMAIL-2 gateway. The recipient will see your callsign as the sender.</p>
@@ -151,8 +154,13 @@
 
 <script>
 let msgIndex = 0;
-let allMessages = [];     // full message history
-let filterCall = null;    // currently filtered callsign, or null for all
+let allMessages = [];
+let filterCall = null;
+let activeTab = 'stations';
+
+// Cached data for map
+let savedStations = [];
+let heardStations = [];
 
 const messagesDiv = document.getElementById('messages');
 const heardList = document.getElementById('heard-list');
@@ -165,6 +173,70 @@ const destInput = document.getElementById('dest');
 const textInput = document.getElementById('text');
 const sendForm = document.getElementById('send-form');
 
+// --- Map ---
+const map = L.map('map').setView([39.5, -98.35], 4);  // US center default
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 18,
+}).addTo(map);
+
+let mapMarkers = [];
+
+function clearMapMarkers() {
+    mapMarkers.forEach(m => map.removeLayer(m));
+    mapMarkers = [];
+}
+
+function stationIcon(color) {
+    return L.divIcon({
+        className: '',
+        html: `<div style="background:${color};width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+        popupAnchor: [0, -8],
+    });
+}
+
+function updateMap() {
+    clearMapMarkers();
+    const bounds = [];
+
+    if (activeTab === 'stations') {
+        // Show only saved stations that have a known position from heard data
+        const heardMap = {};
+        heardStations.forEach(h => { heardMap[h.callsign.toUpperCase()] = h; });
+
+        savedStations.forEach(s => {
+            const h = heardMap[s.callsign.toUpperCase()];
+            if (!h || h.lat == null) return;
+            const marker = L.marker([h.lat, h.lon], { icon: stationIcon('#00d4ff') })
+                .bindPopup(`<b>${escHtml(s.callsign)}</b><br>${escHtml(s.name || '')}<br><small>${escHtml(h.comment || '')}</small><br><a href="${aprsfiUrl(s.callsign)}" target="_blank">aprs.fi</a>`)
+                .addTo(map);
+            marker.on('click', () => openConversation(s.callsign));
+            mapMarkers.push(marker);
+            bounds.push([h.lat, h.lon]);
+        });
+    } else if (activeTab === 'heard') {
+        // Show all heard stations from last hour
+        const oneHourAgo = new Date(Date.now() - 3600000);
+        heardStations.forEach(s => {
+            if (s.lat == null) return;
+            const seen = new Date(s.last_seen);
+            if (seen < oneHourAgo) return;
+            const marker = L.marker([s.lat, s.lon], { icon: stationIcon('#4ecca3') })
+                .bindPopup(`<b>${escHtml(s.callsign)}</b><br><small>${s.last_seen}</small><br><small>${escHtml(s.comment || '')}</small><br><a href="${aprsfiUrl(s.callsign)}" target="_blank">aprs.fi</a>`)
+                .addTo(map);
+            marker.on('click', () => openConversation(s.callsign));
+            mapMarkers.push(marker);
+            bounds.push([s.lat, s.lon]);
+        });
+    }
+
+    if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+    }
+}
+
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -172,6 +244,8 @@ document.querySelectorAll('.tab').forEach(tab => {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        activeTab = tab.dataset.tab;
+        updateMap();
     });
 });
 
@@ -254,7 +328,6 @@ sendForm.addEventListener('submit', async (e) => {
         destInput.value = dest;
         textInput.value = '';
         textInput.focus();
-        // If we just sent to someone, open their conversation
         if (!filterCall) openConversation(dest);
         await pollMessages();
     } catch(e) {
@@ -267,7 +340,9 @@ async function loadStations() {
     try {
         const resp = await fetch('/api/stations');
         const data = await resp.json();
-        renderStations(data.stations);
+        savedStations = data.stations;
+        renderStations(savedStations);
+        if (activeTab === 'stations') updateMap();
     } catch(e) {}
 }
 
@@ -320,23 +395,29 @@ async function pollHeard() {
     try {
         const resp = await fetch('/api/heard');
         const data = await resp.json();
-        heardList.innerHTML = '';
-        if (data.stations.length === 0) {
-            heardList.innerHTML = '<div style="padding:12px;color:#888;font-size:12px;">No stations heard yet. Set a filter in config.json to receive position packets.</div>';
-            return;
-        }
-        data.stations.forEach(s => {
-            const div = document.createElement('div');
-            div.className = 'station';
-            div.innerHTML = `
-                <div class="call">${escHtml(s.callsign)} <a href="${aprsfiUrl(s.callsign)}" target="_blank" class="aprsfi-link">aprs.fi</a></div>
-                <div class="time">${s.last_seen}</div>
-                <div class="comment">${escHtml(s.comment || '')}</div>
-            `;
-            div.addEventListener('click', (e) => { if (!e.target.classList.contains('aprsfi-link')) openConversation(s.callsign); });
-            heardList.appendChild(div);
-        });
+        heardStations = data.stations;
+        renderHeard(heardStations);
+        updateMap();
     } catch(e) {}
+}
+
+function renderHeard(stations) {
+    heardList.innerHTML = '';
+    if (stations.length === 0) {
+        heardList.innerHTML = '<div style="padding:12px;color:#888;font-size:12px;">No stations heard yet. Set a filter in config.json to receive position packets.</div>';
+        return;
+    }
+    stations.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'station';
+        div.innerHTML = `
+            <div class="call">${escHtml(s.callsign)} <a href="${aprsfiUrl(s.callsign)}" target="_blank" class="aprsfi-link">aprs.fi</a></div>
+            <div class="time">${s.last_seen}</div>
+            <div class="comment">${escHtml(s.comment || '')}</div>
+        `;
+        div.addEventListener('click', (e) => { if (!e.target.classList.contains('aprsfi-link')) openConversation(s.callsign); });
+        heardList.appendChild(div);
+    });
 }
 
 // --- Email ---
@@ -406,6 +487,9 @@ pollMessages();
 pollHeard();
 loadStations();
 destInput.focus();
+
+// Fix Leaflet map size after layout renders
+setTimeout(() => map.invalidateSize(), 200);
 </script>
 </body>
 </html>
