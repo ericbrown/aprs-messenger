@@ -18,6 +18,9 @@ PORT = 14580
 
 RETRY_INTERVAL = 30  # seconds between retries
 RETRY_MAX = 3
+KEEPALIVE_INTERVAL = 120  # seconds between keepalive pings
+RECONNECT_DELAY = 5  # seconds before reconnect attempt
+RECONNECT_MAX = 10  # max consecutive reconnect attempts
 
 
 def load_config() -> dict:
@@ -189,9 +192,19 @@ class APRSMessenger:
         self.on_message = None  # called with (direction, sender, text)
         self.on_ack = None  # called with (msg_id, sender)
         self.on_retry_failed = None  # called with (msg_id, dest, text)
+        self.on_status = None  # called with (status_string)
 
-    def connect(self) -> str:
-        """Connect and authenticate to APRS-IS. Returns status string."""
+        self._reconnect_count = 0
+        self._shutdown = False
+
+    def _do_connect(self) -> str:
+        """Low-level connect and authenticate. Returns status string."""
+        if self.sock:
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(30)
         self.sock.connect((SERVER, PORT))
@@ -219,12 +232,15 @@ class APRSMessenger:
 
         self.sock.settimeout(None)
         self.connected = True
+        self._reconnect_count = 0
+        return "verified" if verified else resp
 
-        # Start background threads
+    def connect(self) -> str:
+        """Connect and start background threads."""
+        status = self._do_connect()
         threading.Thread(target=self._receiver, daemon=True).start()
         threading.Thread(target=self._retry_loop, daemon=True).start()
-
-        status = "verified" if verified else resp
+        threading.Thread(target=self._keepalive_loop, daemon=True).start()
         return status
 
     def send(self, dest: str, text: str) -> int:
@@ -275,12 +291,18 @@ class APRSMessenger:
     def _receiver(self):
         """Background: read from APRS-IS, dispatch messages and positions."""
         buf = ""
-        while self.connected:
+        while not self._shutdown:
+            if not self.connected:
+                time.sleep(1)
+                continue
             try:
                 data = self.sock.recv(4096)
                 if not data:
                     self.connected = False
-                    break
+                    self._notify_status("Disconnected from APRS-IS")
+                    self._reconnect()
+                    buf = ""
+                    continue
                 buf += data.decode("ascii", errors="replace")
                 while "\r\n" in buf:
                     line, buf = buf.split("\r\n", 1)
@@ -289,7 +311,9 @@ class APRSMessenger:
                     self._handle_line(line)
             except OSError:
                 self.connected = False
-                break
+                self._notify_status("Connection lost")
+                self._reconnect()
+                buf = ""
 
     def _handle_line(self, line: str):
         """Process a single APRS-IS line."""
@@ -347,9 +371,40 @@ class APRSMessenger:
         if self.on_message:
             self.on_message("RX", parsed["from"], parsed["text"], parsed.get("id"))
 
+    def _notify_status(self, msg: str):
+        """Send a status message to the UI."""
+        if self.on_status:
+            self.on_status(msg)
+
+    def _reconnect(self):
+        """Attempt to reconnect to APRS-IS with backoff."""
+        while not self._shutdown and self._reconnect_count < RECONNECT_MAX:
+            self._reconnect_count += 1
+            delay = RECONNECT_DELAY * self._reconnect_count
+            self._notify_status(f"Reconnecting in {delay}s (attempt {self._reconnect_count}/{RECONNECT_MAX})...")
+            time.sleep(delay)
+            try:
+                status = self._do_connect()
+                self._notify_status(f"Reconnected ({status})")
+                return
+            except OSError as e:
+                self._notify_status(f"Reconnect failed: {e}")
+        if not self._shutdown:
+            self._notify_status(f"Giving up after {RECONNECT_MAX} attempts")
+
+    def _keepalive_loop(self):
+        """Background: send periodic keepalive to prevent idle disconnect."""
+        while not self._shutdown:
+            time.sleep(KEEPALIVE_INTERVAL)
+            if self.connected and self.sock:
+                try:
+                    self.sock.sendall(b"#keepalive\r\n")
+                except OSError:
+                    pass
+
     def _retry_loop(self):
         """Background: resend unacknowledged messages."""
-        while self.connected:
+        while not self._shutdown:
             time.sleep(10)
             now = time.time()
             to_retry = []
@@ -380,10 +435,14 @@ class APRSMessenger:
                     self.on_retry_failed(msg_id, info["dest"], info["text"])
 
     def disconnect(self):
-        """Close the connection."""
+        """Close the connection and stop all background threads."""
+        self._shutdown = True
         self.connected = False
         if self.sock:
-            self.sock.close()
+            try:
+                self.sock.close()
+            except OSError:
+                pass
 
 
 def cli_main():
@@ -408,9 +467,13 @@ def cli_main():
     def on_retry_failed(msg_id, dest, text):
         print(f"  [FAILED msg#{msg_id} to {dest} after {RETRY_MAX} retries: \"{text}\"]")
 
+    def on_status(msg):
+        print(f"  [{msg}]")
+
     messenger.on_message = on_message
     messenger.on_ack = on_ack
     messenger.on_retry_failed = on_retry_failed
+    messenger.on_status = on_status
 
     print(f"Connecting to APRS-IS as {messenger.callsign}...")
     try:
