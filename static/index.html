@@ -191,31 +191,51 @@ function clearMapMarkers() {
 
 // APRS symbol code -> emoji/label mapping (symbol_table + symbol_code)
 const APRS_SYMBOLS = {
+    // Primary table (/)
     '/-': '\u{1F3E0}', // house
-    '/[': '\u{1F9D1}', // person (jogger)
-    '/>': '\u{1F697}', // car
-    '/k': '\u{1F69A}', // truck
-    '/v': '\u{1F69B}', // van
-    '/R': '\u{1F4FB}', // radio/recreational vehicle
-    '/y': '\u{1F3E0}', // house with yagi
-    '/;': '\u{2600}',  // campground
-    '/O': '\u{1F4E1}', // balloon
-    '/X': '\u{2708}',  // helicopter
+    '/!': '\u{1F6A8}', // police
+    '/#': '\u{1F4E1}', // digi
+    '/$': '\u{260E}',  // phone
+    '/&': '\u{26D1}',  // gateway
     '/\'':'\u{2708}',  // aircraft small
+    '/)': '\u{1F4F1}', // smartphone
+    '/*': '\u{2B50}',  // star/SnowFlake
+    '/;': '\u{2600}',  // campground
+    '/>': '\u{1F697}', // car
+    '/C': '\u{1F6E5}', // canoe
+    '/I': '\u{1F4E1}', // igate
+    '/K': '\u{1F3EB}', // school
+    '/O': '\u{1F388}', // balloon
+    '/P': '\u{1F6B2}', // parking
+    '/R': '\u{1F699}', // recreational vehicle
+    '/U': '\u{1F68C}', // bus
+    '/X': '\u{1F681}', // helicopter
+    '/Y': '\u{26F5}',  // sailboat
+    '/[': '\u{1F6B6}', // walker/jogger
     '/^': '\u{2708}',  // aircraft large
     '/_': '\u{1F327}', // weather station
+    '/b': '\u{1F6B2}', // bicycle
+    '/f': '\u{1F525}', // fire
+    '/j': '\u{1F527}', // jeep
+    '/k': '\u{1F69A}', // truck
+    '/p': '\u{1F415}', // dog
     '/r': '\u{1F4E1}', // repeater
-    '/&': '\u{26D1}',  // diamond/gateway
-    '/I': '\u{1F4E1}', // igate
-    '\\K': '\u{1F69C}', // SUV/ATV
-    '\\n': '\u{1F6A9}', // triangle/nav buoy
+    '/s': '\u{26F5}',  // ship/boat
+    '/u': '\u{1F69A}', // truck 18-wheeler
+    '/v': '\u{1F69B}', // van
+    '/y': '\u{1F3E0}', // house w/ yagi
+    // Alternate table (\)
+    '\\K': '\u{1F699}', // SUV
     '\\j': '\u{1F6D1}', // work zone
+    '\\n': '\u{1F6A9}', // nav buoy
     '\\s': '\u{1F6A8}', // sheriff/SAR
+    '\\a': '\u{1F48E}', // ARES/RACES
+    '\\m': '\u{1F4CD}', // milepost
 };
 
 function symbolEmoji(sym) {
-    if (!sym || sym.length < 2) return '\u{1F4CD}';  // default pin
-    return APRS_SYMBOLS[sym] || '\u{1F4CD}';
+    if (!sym || sym.length < 2) return '\u{1F534}';  // red circle for unknown
+    return APRS_SYMBOLS[sym] || '\u{1F7E2}';  // green circle for unrecognized but valid
 }
 
 function stationIcon(sym, color) {
@@ -318,6 +338,20 @@ function clearFilter() {
 
 document.getElementById('filter-clear').addEventListener('click', clearFilter);
 
+let focusMarker = null;
+function focusStation(callsign) {
+    const h = heardStations.find(s => s.callsign.toUpperCase() === callsign.toUpperCase());
+    if (!h || h.lat == null) return;
+    // Remove previous focus marker
+    if (focusMarker) { map.removeLayer(focusMarker); focusMarker = null; }
+    // Add a highlighted marker
+    focusMarker = L.marker([h.lat, h.lon], { icon: stationIcon(h.symbol, '#ff0') })
+        .bindPopup(`<b>${escHtml(h.callsign)}</b><br><small>${h.last_seen}</small><br><small>${escHtml(h.comment || '')}</small><br><a href="${aprsfiUrl(h.callsign)}" target="_blank">aprs.fi</a>`)
+        .addTo(map)
+        .openPopup();
+    map.setView([h.lat, h.lon], 13);
+}
+
 function aprsfiUrl(callsign) {
     return 'https://aprs.fi/#!call=a%2F' + encodeURIComponent(callsign) + '&timerange=3600';
 }
@@ -407,9 +441,7 @@ function renderStations(stations) {
         `;
         div.querySelector('.info').addEventListener('click', () => {
             openConversation(s.callsign);
-            // Zoom map to this station if we have its position
-            const h = heardStations.find(h => h.callsign.toUpperCase() === s.callsign.toUpperCase());
-            if (h && h.lat != null) map.setView([h.lat, h.lon], 13);
+            focusStation(s.callsign);
         });
         div.querySelector('.del-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -463,7 +495,7 @@ function renderHeard(stations) {
         div.addEventListener('click', (e) => {
             if (e.target.classList.contains('aprsfi-link')) return;
             openConversation(s.callsign);
-            if (s.lat != null) map.setView([s.lat, s.lon], 13);
+            focusStation(s.callsign);
         });
         heardList.appendChild(div);
     });
