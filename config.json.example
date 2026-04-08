@@ -1,5 +1,6 @@
 {
     "callsign": "YOURCALL-5",
     "passcode": 12345,
-    "filter": "r/YOUR_LAT/YOUR_LON/50"
+    "filter": "r/YOUR_LAT/YOUR_LON/50",
+    "location": [YOUR_LAT, YOUR_LON]
 }

@@ -116,21 +116,25 @@ def parse_position(line: str) -> dict | None:
 
         dtype = body[0]
         if dtype in "!=":
-            # Uncompressed: !DDMM.MMN/DDDMM.MME
+            # Uncompressed: !DDMM.MMN/DDDMM.MMEsymbol
             lat = parse_lat(body[1:9])
+            symbol_table = body[9] if len(body) > 9 else "/"
             lon = parse_lon(body[10:19])
+            symbol_code = body[19] if len(body) > 19 else "-"
             comment = body[20:].strip() if len(body) > 20 else ""
         elif dtype in "/@":
-            # With timestamp: /HHMMSSh or @HHMMSSh then position
+            # With timestamp: /HHMMSSh then position
             lat = parse_lat(body[8:16])
+            symbol_table = body[16] if len(body) > 16 else "/"
             lon = parse_lon(body[17:26])
+            symbol_code = body[26] if len(body) > 26 else "-"
             comment = body[27:].strip() if len(body) > 27 else ""
         else:
             return None
 
         if lat is None or lon is None:
             return None
-        return {"from": sender, "lat": lat, "lon": lon, "comment": comment}
+        return {"from": sender, "lat": lat, "lon": lon, "symbol": symbol_table + symbol_code, "comment": comment}
     except (ValueError, IndexError):
         return None
 
@@ -335,6 +339,7 @@ class APRSMessenger:
                 self.heard[pos["from"]] = {
                     "lat": pos["lat"],
                     "lon": pos["lon"],
+                    "symbol": pos.get("symbol", "/-"),
                     "last_seen": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "comment": pos["comment"],
                 }

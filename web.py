@@ -68,10 +68,12 @@ class APRSHandler(SimpleHTTPRequestHandler):
 
     def _api_status(self):
         pending_count = len(self.messenger.pending)
+        config = _read_config()
         self._json_response({
             "callsign": self.messenger.callsign,
             "connected": self.messenger.connected,
             "pending": pending_count,
+            "location": config.get("location"),
         })
 
     def _api_send(self):

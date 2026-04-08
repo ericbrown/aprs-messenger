@@ -174,11 +174,12 @@ const textInput = document.getElementById('text');
 const sendForm = document.getElementById('send-form');
 
 // --- Map ---
-const map = L.map('map').setView([39.5, -98.35], 4);  // US center default
+const map = L.map('map').setView([39.5, -98.35], 4);  // default until location loaded
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 18,
 }).addTo(map);
+let homeLocation = null;
 
 let mapMarkers = [];
 
@@ -187,13 +188,43 @@ function clearMapMarkers() {
     mapMarkers = [];
 }
 
-function stationIcon(color) {
+// APRS symbol code -> emoji/label mapping (symbol_table + symbol_code)
+const APRS_SYMBOLS = {
+    '/-': '\u{1F3E0}', // house
+    '/[': '\u{1F9D1}', // person (jogger)
+    '/>': '\u{1F697}', // car
+    '/k': '\u{1F69A}', // truck
+    '/v': '\u{1F69B}', // van
+    '/R': '\u{1F4FB}', // radio/recreational vehicle
+    '/y': '\u{1F3E0}', // house with yagi
+    '/;': '\u{2600}',  // campground
+    '/O': '\u{1F4E1}', // balloon
+    '/X': '\u{2708}',  // helicopter
+    '/\'':'\u{2708}',  // aircraft small
+    '/^': '\u{2708}',  // aircraft large
+    '/_': '\u{1F327}', // weather station
+    '/r': '\u{1F4E1}', // repeater
+    '/&': '\u{26D1}',  // diamond/gateway
+    '/I': '\u{1F4E1}', // igate
+    '\\K': '\u{1F69C}', // SUV/ATV
+    '\\n': '\u{1F6A9}', // triangle/nav buoy
+    '\\j': '\u{1F6D1}', // work zone
+    '\\s': '\u{1F6A8}', // sheriff/SAR
+};
+
+function symbolEmoji(sym) {
+    if (!sym || sym.length < 2) return '\u{1F4CD}';  // default pin
+    return APRS_SYMBOLS[sym] || '\u{1F4CD}';
+}
+
+function stationIcon(sym, color) {
+    const emoji = symbolEmoji(sym);
     return L.divIcon({
         className: '',
-        html: `<div style="background:${color};width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
-        iconSize: [12, 12],
-        iconAnchor: [6, 6],
-        popupAnchor: [0, -8],
+        html: `<div style="font-size:20px;text-shadow:0 0 3px ${color}, 0 0 6px ${color};">${emoji}</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -12],
     });
 }
 
@@ -209,7 +240,7 @@ function updateMap() {
         savedStations.forEach(s => {
             const h = heardMap[s.callsign.toUpperCase()];
             if (!h || h.lat == null) return;
-            const marker = L.marker([h.lat, h.lon], { icon: stationIcon('#00d4ff') })
+            const marker = L.marker([h.lat, h.lon], { icon: stationIcon(h.symbol, '#00d4ff') })
                 .bindPopup(`<b>${escHtml(s.callsign)}</b><br>${escHtml(s.name || '')}<br><small>${escHtml(h.comment || '')}</small><br><a href="${aprsfiUrl(s.callsign)}" target="_blank">aprs.fi</a>`)
                 .addTo(map);
             marker.on('click', () => openConversation(s.callsign));
@@ -223,7 +254,7 @@ function updateMap() {
             if (s.lat == null) return;
             const seen = new Date(s.last_seen);
             if (seen < oneHourAgo) return;
-            const marker = L.marker([s.lat, s.lon], { icon: stationIcon('#4ecca3') })
+            const marker = L.marker([s.lat, s.lon], { icon: stationIcon(s.symbol, '#4ecca3') })
                 .bindPopup(`<b>${escHtml(s.callsign)}</b><br><small>${s.last_seen}</small><br><small>${escHtml(s.comment || '')}</small><br><a href="${aprsfiUrl(s.callsign)}" target="_blank">aprs.fi</a>`)
                 .addTo(map);
             marker.on('click', () => openConversation(s.callsign));
@@ -234,6 +265,8 @@ function updateMap() {
 
     if (bounds.length > 0) {
         map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+    } else if (homeLocation) {
+        map.setView(homeLocation, 11);
     }
 }
 
@@ -365,7 +398,12 @@ function renderStations(stations) {
                 <button class="btn btn-sm btn-danger del-btn">X</button>
             </div>
         `;
-        div.querySelector('.info').addEventListener('click', () => openConversation(s.callsign));
+        div.querySelector('.info').addEventListener('click', () => {
+            openConversation(s.callsign);
+            // Zoom map to this station if we have its position
+            const h = heardStations.find(h => h.callsign.toUpperCase() === s.callsign.toUpperCase());
+            if (h && h.lat != null) map.setView([h.lat, h.lon], 13);
+        });
         div.querySelector('.del-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
             if (!confirm('Remove ' + s.callsign + ' from saved stations?')) return;
@@ -415,7 +453,11 @@ function renderHeard(stations) {
             <div class="time">${s.last_seen}</div>
             <div class="comment">${escHtml(s.comment || '')}</div>
         `;
-        div.addEventListener('click', (e) => { if (!e.target.classList.contains('aprsfi-link')) openConversation(s.callsign); });
+        div.addEventListener('click', (e) => {
+            if (e.target.classList.contains('aprsfi-link')) return;
+            openConversation(s.callsign);
+            if (s.lat != null) map.setView([s.lat, s.lon], 13);
+        });
         heardList.appendChild(div);
     });
 }
@@ -457,6 +499,10 @@ async function pollStatus() {
     try {
         const resp = await fetch('/api/status');
         const data = await resp.json();
+        if (data.location && !homeLocation) {
+            homeLocation = data.location;
+            map.setView(homeLocation, 11);
+        }
         if (data.connected) {
             statusEl.textContent = data.callsign + ' connected';
             statusEl.className = '';
