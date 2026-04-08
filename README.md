@@ -26,7 +26,7 @@ Edit `config.json` with your callsign and APRS-IS passcode:
 {
     "callsign": "YOURCALL-5",
     "passcode": 12345,
-    "filter": "r/39.75/-104.99/50"
+    "filter": "r/YOUR_LAT/YOUR_LON/50"
 }
 ```
 
@@ -49,7 +49,7 @@ The `config.json` file has three fields:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `callsign` | Yes | Your callsign with SSID. Use `-5` for a software client (e.g., `N0EDB-5`). Don't reuse an SSID that's already active on another station. |
+| `callsign` | Yes | Your callsign with SSID. Use `-5` for a software client (e.g., `YOURCALL-5`). Don't reuse an SSID that's already active on another station. |
 | `passcode` | Yes | Your APRS-IS verification passcode. This is a numeric code derived from your callsign. If you don't know yours, search for "APRS-IS passcode generator" or use the `aprs_passcode()` function in the code. |
 | `filter` | No | An [APRS-IS filter string](http://www.aprs-is.net/javAPRSFilter.aspx) that controls what packets you receive beyond your own messages. See [Filters](#filters) below. |
 
@@ -86,13 +86,13 @@ Common filter examples:
 
 | Filter | Description |
 |--------|-------------|
-| `r/39.75/-104.99/50` | 50 km radius around lat 39.75, lon -104.99 |
-| `r/39.75/-104.99/100` | 100 km radius |
+| `r/YOUR_LAT/YOUR_LON/50` | 50 km radius around your position |
+| `r/YOUR_LAT/YOUR_LON/100` | 100 km radius |
 | `p/W0/N0/K0` | All stations with callsigns starting W0, N0, or K0 |
 | `b/W0ABC/N0XYZ` | Only specific callsigns |
 | `t/p` | Position packets only (all stations passing the server) |
 
-You can combine multiple filters with spaces: `r/39.75/-104.99/50 p/W0`
+You can combine multiple filters with spaces: `r/YOUR_LAT/YOUR_LON/50 p/W0`
 
 Full filter documentation: [aprs-is.net/javAPRSFilter.aspx](http://www.aprs-is.net/javAPRSFilter.aspx)
 
@@ -100,9 +100,9 @@ Full filter documentation: [aprs-is.net/javAPRSFilter.aspx](http://www.aprs-is.n
 
 ```
 $ python3 aprs_messenger.py
-Connecting to APRS-IS as N0EDB-5...
+Connecting to APRS-IS as YOURCALL-5...
   Logged in (verified)
-  Filter: g/N0EDB-5* r/39.75/-104.99/50
+  Filter: g/YOURCALL-5* r/YOUR_LAT/YOUR_LON/50
   Log file: /home/user/aprs-messenger/messages.log
 
 Type a callsign to send a message, or /help for commands. Ctrl+C to quit.
@@ -131,9 +131,9 @@ msg: Hello from my APRS messenger!
 
 ```
 $ python3 web.py
-Connecting to APRS-IS as N0EDB-5...
+Connecting to APRS-IS as YOURCALL-5...
   Logged in (verified)
-  Filter: g/N0EDB-5* r/39.75/-104.99/50
+  Filter: g/YOURCALL-5* r/YOUR_LAT/YOUR_LON/50
   Log file: /home/user/aprs-messenger/messages.log
 
 Web UI: http://localhost:8073
