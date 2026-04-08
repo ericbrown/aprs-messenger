@@ -425,14 +425,17 @@ def cli_main():
         aprs_filter += f" {messenger.filter}"
     print(f"  Filter: {aprs_filter}")
     print(f"  Log file: {LOG_FILE}")
-    print(f"\nCommands: /heard — show nearby stations  |  Ctrl+C — quit\n")
+    print(f"\nType a callsign to send a message, or /help for commands. Ctrl+C to quit.\n")
 
     try:
         while True:
             try:
-                line = input("to: ").strip()
+                line = input("> ").strip()
             except EOFError:
                 break
+
+            if not line:
+                continue
 
             if line.lower() == "/heard":
                 stations = messenger.get_heard()
@@ -446,9 +449,28 @@ def cli_main():
                 print()
                 continue
 
-            dest = line.upper()
-            if not dest:
+            if line.lower() == "/pending":
+                with messenger.pending_lock:
+                    if not messenger.pending:
+                        print("  No pending messages.\n")
+                        continue
+                    for mid, info in messenger.pending.items():
+                        print(f"  msg#{mid} to {info['dest']}: \"{info['text']}\" (retries: {info['retries']})")
+                print()
                 continue
+
+            if line.lower() == "/help":
+                print("  /heard   — show nearby stations")
+                print("  /pending — show unacknowledged messages")
+                print("  /help    — this help")
+                print("  Or type a callsign to send a message\n")
+                continue
+
+            if line.startswith("/"):
+                print(f"  Unknown command: {line}. Type /help\n")
+                continue
+
+            dest = line.upper()
             try:
                 text = input("msg: ").strip()
             except EOFError:
